@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ethanol Sources → Site Targeting (Leaflet Demo)</title>
+
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    #app { display: grid; grid-template-columns: 360px 1fr; height: 100%; }
+    #sidebar { padding: 14px 14px 10px; border-right: 1px solid #e5e7eb; overflow: auto; background: #fff; }
+    #map { height: 100%; width: 100%; }
+
+    h1 { font-size: 16px; margin: 0 0 10px; }
+    .muted { color: #6b7280; font-size: 12px; line-height: 1.35; margin-bottom: 12px; }
+    .panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+    label { font-size: 12px; color: #374151; }
+    input[type="text"], select {
+      width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;
+    }
+    input[type="range"] { width: 100%; }
+    .inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pill { background: #f3f4f6; border: 1px solid #e5e7eb; padding: 4px 8px; border-radius: 999px; font-size: 12px; color: #374151; }
+    .btn {
+      cursor: pointer; border: 1px solid #d1d5db; background: #fff; border-radius: 8px;
+      padding: 8px 10px; font-size: 13px;
+    }
+    .btn:hover { background: #f9fafb; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .statbox { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px; }
+    .statbox .k { font-size: 11px; color: #6b7280; }
+    .statbox .v { font-size: 16px; font-weight: 650; color: #111827; margin-top: 2px; }
+    .legend {
+      position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,0.95);
+      border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; font-size: 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    }
+    .legend .item { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #9ca3af; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #111827; background: #10b981; }
+    .dot2 { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #111827; background: #3b82f6; }
+    .note { font-size: 11px; color: #6b7280; margin-top: 8px; }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <h1>Ethanol Sources → Site Targeting</h1>
+      <div class="muted">
+        Demo Leaflet app with hard-coded sample data. Use filters to narrow plants, toggle layers, and visualize supply radii.
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <div>
+            <label for="searchBox">Search (plant/operator/city)</label>
+            <input id="searchBox" type="text" placeholder="e.g., POET, Clinton, ADM" />
+          </div>
+
+          <div>
+            <label for="stateSelect">States (plants)</label>
+            <select id="stateSelect" multiple size="6"></select>
+            <div class="note">Tip: Cmd/Ctrl-click to multi-select. Empty selection = all states.</div>
+          </div>
+
+          <div>
+            <label for="capRange">Min capacity (MMgy): <span class="pill" id="capLabel"></span></label>
+            <input id="capRange" type="range" min="0" max="260" step="5" value="0" />
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="inline">
+          <label class="inline"><input id="togglePlants" type="checkbox" checked /> Plants</label>
+          <label class="inline"><input id="toggleSites" type="checkbox" checked /> Candidate sites</label>
+          <label class="inline"><input id="toggleBuffers" type="checkbox" checked /> Supply radius</label>
+          <label class="inline"><input id="toggleLogistics" type="checkbox" /> Logistics demo</label>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="radiusRange">Supply radius (miles): <span class="pill" id="radiusLabel"></span></label>
+            <input id="radiusRange" type="range" min="25" max="200" step="5" value="100" />
+            <div class="note">Circles are drawn around filtered plants.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="stats">
+          <div class="statbox">
+            <div class="k">Plants shown</div>
+            <div class="v" id="plantsShown">0</div>
+          </div>
+          <div class="statbox">
+            <div class="k">Total capacity</div>
+            <div class="v" id="totalCapacity">0</div>
+          </div>
+        </div>
+
+        <div class="inline" style="margin-top:10px;">
+          <button class="btn" id="fitBtn">Fit to shown plants</button>
+          <button class="btn" id="resetBtn">Reset filters</button>
+        </div>
+
+        <div class="note">
+          Next step: replace the sample dataset with EIA/industry CSV → GeoJSON, then keep the same UI.
+        </div>
+      </div>
+    </div>
+
+    <div id="map"></div>
+  </div>
+
+  <div class="legend" id="legend">
+    <div style="font-weight:650; color:#111827;">Legend</div>
+    <div class="item"><span class="dot"></span> Ethanol plant (size ~ capacity)</div>
+    <div class="item"><span class="dot2"></span> Candidate site</div>
+    <div class="item"><span class="swatch" style="background:#a7f3d0;"></span> Supply radius buffer</div>
+    <div class="item"><span class="swatch" style="background:#f59e0b;"></span> Logistics demo line</div>
+  </div>
+
+  <script>
+    /**********************
+     * 1) SAMPLE DATA
+     * Coordinates/capacities here are illustrative placeholders.
+     * Replace with real EIA data later (Plant → Lat/Lon + Capacity).
+     **********************/
+    const ethanolPlants = [
+      { id: "p1",  name: "ADM Ethanol", operator: "ADM", city: "Clinton", state: "IA", capacity_mmgy: 237, lat: 41.844, lon: -90.188, status: "Operating" },
+      { id: "p2",  name: "POET Bioprocessing – Fairbank", operator: "POET", city: "Fairbank", state: "IA", capacity_mmgy: 132, lat: 42.637, lon: -92.047, status: "Operating" },
+      { id: "p3",  name: "POET Bioprocessing – Iowa Falls", operator: "POET", city: "Iowa Falls", state: "IA", capacity_mmgy: 112, lat: 42.522, lon: -93.251, status: "Operating" },
+      { id: "p4",  name: "Homeland Energy Solutions", operator: "Homeland", city: "New Hampton", state: "IA", capacity_mmgy: 200, lat: 43.060, lon: -92.317, status: "Operating" },
+      { id: "p5",  name: "Southwest Iowa Renewable Energy", operator: "SIRE", city: "Council Bluffs", state: "IA", capacity_mmgy: 130, lat: 41.262, lon: -95.861, status: "Operating" },
+      { id: "p6",  name: "Glacial Lakes Energy – Watertown", operator: "Glacial Lakes", city: "Watertown", state: "SD", capacity_mmgy: 148, lat: 44.899, lon: -97.115, status: "Operating" },
+      { id: "p7",  name: "Eagle Energy", operator: "Eagle Energy", city: "Mitchell", state: "SD", capacity_mmgy: 110, lat: 43.709, lon: -98.029, status: "Operating" },
+      { id: "p8",  name: "Fox River Valley Ethanol", operator: "FRVE", city: "Oshkosh", state: "WI", capacity_mmgy: 65, lat: 44.024, lon: -88.542, status: "Operating" },
+      { id: "p9",  name: "Pennsylvania Grain Processing", operator: "PGP", city: "Erie", state: "PA", capacity_mmgy: 120, lat: 42.130, lon: -80.085, status: "Operating" },
+      { id: "p10", name: "Elite Octane", operator: "Elite Octane", city: "Atlantic", state: "IA", capacity_mmgy: 150, lat: 41.403, lon: -95.013, status: "Operating" },
+      { id: "p11", name: "Golden Grain Energy", operator: "Golden Grain", city: "Mason City", state: "IA", capacity_mmgy: 115, lat: 43.153, lon: -93.201, status: "Operating" },
+      { id: "p12", name: "Siouxland Energy Cooperative", operator: "Siouxland", city: "Sioux Center", state: "IA", capacity_mmgy: 70, lat: 43.079, lon: -96.175, status: "Operating" }
+    ];
+
+    const candidateSites = [
+      { id: "s1", name: "Data Center Candidate – Northern VA", type: "Data Center", city: "Ashburn", state: "VA", lat: 39.043, lon: -77.487 },
+      { id: "s2", name: "Hospital Candidate – Chicago Metro", type: "Hospital", city: "Oak Lawn", state: "IL", lat: 41.719, lon: -87.747 },
+      { id: "s3", name: "Industrial Campus – Columbus", type: "Industrial", city: "Columbus", state: "OH", lat: 39.961, lon: -82.999 },
+      { id: "s4", name: "Municipal Microgrid – Denver", type: "Municipal", city: "Denver", state: "CO", lat: 39.739, lon: -104.990 },
+      { id: "s5", name: "Port-Adj. Site – New Orleans", type: "Port/Logistics", city: "New Orleans", state: "LA", lat: 29.951, lon: -90.071 }
+    ];
+
+    // Logistics demo polylines (illustrative)
+    const logisticsDemo = [
+      {
+        name: "River Corridor (Demo)",
+        kind: "river",
+        coords: [
+          [47.6, -94.7], [46.8, -92.1], [45.0, -91.1], [43.0, -91.2], [41.6, -90.2], [39.8, -90.2], [37.2, -89.5], [35.1, -90.1], [32.4, -90.2], [29.9, -90.1]
+        ]
+      },
+      {
+        name: "Rail Spine (Demo)",
+        kind: "rail",
+        coords: [
+          [44.9, -97.1], [43.7, -98.0], [42.5, -93.3], [41.4, -95.0], [41.3, -95.9], [39.0, -94.6], [37.7, -97.3], [39.7, -104.9]
+        ]
+      }
+    ];
+
+    /**********************
+     * 2) MAP SETUP
+     **********************/
+    const map = L.map("map", { zoomControl: true }).setView([39.5, -98.35], 4);
+
+    const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Layer groups
+    const plantsLayer = L.layerGroup().addTo(map);
+    const sitesLayer = L.layerGroup().addTo(map);
+    const buffersLayer = L.layerGroup().addTo(map);
+    const logisticsLayer = L.layerGroup(); // off by default
+
+    /**********************
+     * 3) UI ELEMENTS
+     **********************/
+    const elSearch = document.getElementById("searchBox");
+    const elStates = document.getElementById("stateSelect");
+    const elCap = document.getElementById("capRange");
+    const elCapLabel = document.getElementById("capLabel");
+    const elRadius = document.getElementById("radiusRange");
+    const elRadiusLabel = document.getElementById("radiusLabel");
+
+    const elTogglePlants = document.getElementById("togglePlants");
+    const elToggleSites = document.getElementById("toggleSites");
+    const elToggleBuffers = document.getElementById("toggleBuffers");
+    const elToggleLogistics = document.getElementById("toggleLogistics");
+
+    const elPlantsShown = document.getElementById("plantsShown");
+    const elTotalCapacity = document.getElementById("totalCapacity");
+
+    const elFit = document.getElementById("fitBtn");
+    const elReset = document.getElementById("resetBtn");
+
+    // Populate state select from plant states
+    const uniqueStates = Array.from(new Set(ethanolPlants.map(p => p.state))).sort();
+    for (const st of uniqueStates) {
+      const opt = document.createElement("option");
+      opt.value = st;
+      opt.textContent = st;
+      elStates.appendChild(opt);
+    }
+
+    /**********************
+     * 4) HELPERS
+     **********************/
+    function milesToMeters(mi) { return mi * 1609.344; }
+
+    function formatInt(n) { return n.toLocaleString(); }
+
+    function getSelectedStates() {
+      const selected = Array.from(elStates.selectedOptions).map(o => o.value);
+      return selected; // empty => all
+    }
+
+    function markerRadiusFromCapacity(mmgy) {
+      // Smooth-ish scaling for display (not analytic)
+      // Min 6 px, max ~18 px
+      const r = 6 + Math.sqrt(Math.max(0, mmgy)) * 0.6;
+      return Math.max(6, Math.min(18, r));
+    }
+
+    function buildPlantPopup(p) {
+      const cap = `${p.capacity_mmgy} MMgy`;
+      return `
+        <div style="min-width:220px">
+          <div style="font-weight:650; margin-bottom:4px;">${p.name}</div>
+          <div><b>Operator:</b> ${p.operator}</div>
+          <div><b>Location:</b> ${p.city}, ${p.state}</div>
+          <div><b>Capacity:</b> ${cap}</div>
+          <div><b>Status:</b> ${p.status}</div>
+          <div style="margin-top:6px; font-size:11px; color:#6b7280;">
+            (Demo data; replace with authoritative EIA/industry records.)
+          </div>
+        </div>
+      `;
+    }
+
+    function buildSitePopup(s) {
+      return `
+        <div style="min-width:220px">
+          <div style="font-weight:650; margin-bottom:4px;">${s.name}</div>
+          <div><b>Type:</b> ${s.type}</div>
+          <div><b>Location:</b> ${s.city}, ${s.state}</div>
+        </div>
+      `;
+    }
+
+    function passesFilters(p) {
+      const q = (elSearch.value || "").trim().toLowerCase();
+      const minCap = Number(elCap.value || 0);
+      const selStates = getSelectedStates();
+
+      // State filter (if any selected)
+      if (selStates.length > 0 && !selStates.includes(p.state)) return false;
+
+      // Capacity filter
+      if (p.capacity_mmgy < minCap) return false;
+
+      // Search filter
+      if (q) {
+        const hay = `${p.name} ${p.operator} ${p.city} ${p.state}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      return true;
+    }
+
+    function updateStats(filteredPlants) {
+      elPlantsShown.textContent = String(filteredPlants.length);
+      const total = filteredPlants.reduce((sum, p) => sum + p.capacity_mmgy, 0);
+      elTotalCapacity.textContent = `${formatInt(total)} MMgy`;
+    }
+
+    function getBoundsFromPlants(filteredPlants) {
+      if (!filteredPlants.length) return null;
+      const latlngs = filteredPlants.map(p => L.latLng(p.lat, p.lon));
+      return L.latLngBounds(latlngs);
+    }
+
+    /**********************
+     * 5) RENDERERS
+     **********************/
+    function renderPlants(filteredPlants) {
+      plantsLayer.clearLayers();
+
+      for (const p of filteredPlants) {
+        const radius = markerRadiusFromCapacity(p.capacity_mmgy);
+
+        const marker = L.circleMarker([p.lat, p.lon], {
+          radius,
+          weight: 2,
+          color: "#111827",
+          fillColor: "#10b981",
+          fillOpacity: 0.9
+        });
+
+        marker.bindPopup(buildPlantPopup(p));
+        marker.addTo(plantsLayer);
+      }
+    }
+
+    function renderSites() {
+      sitesLayer.clearLayers();
+
+      for (const s of candidateSites) {
+        const marker = L.circleMarker([s.lat, s.lon], {
+          radius: 7,
+          weight: 2,
+          color: "#111827",
+          fillColor: "#3b82f6",
+          fillOpacity: 0.9
+        });
+
+        marker.bindPopup(buildSitePopup(s));
+        marker.addTo(sitesLayer);
+      }
+    }
+
+    function renderBuffers(filteredPlants) {
+      buffersLayer.clearLayers();
+
+      const miles = Number(elRadius.value || 100);
+      const meters = milesToMeters(miles);
+
+      for (const p of filteredPlants) {
+        const circle = L.circle([p.lat, p.lon], {
+          radius: meters,
+          weight: 1,
+          color: "#059669",
+          fillColor: "#a7f3d0",
+          fillOpacity: 0.35
+        });
+
+        circle.bindTooltip(`${p.name} – ${miles} mi supply radius`, { sticky: true });
+        circle.addTo(buffersLayer);
+      }
+    }
+
+    function renderLogistics() {
+      logisticsLayer.clearLayers();
+
+      for (const seg of logisticsDemo) {
+        const color = "#f59e0b"; // amber
+        const line = L.polyline(seg.coords, {
+          color,
+          weight: seg.kind === "rail" ? 4 : 3,
+          opacity: 0.9,
+          dashArray: seg.kind === "rail" ? "6 6" : null
+        });
+        line.bindPopup(`<b>${seg.name}</b><div style="color:#6b7280; font-size:12px;">Illustrative overlay</div>`);
+        line.addTo(logisticsLayer);
+      }
+    }
+
+    /**********************
+     * 6) MAIN UPDATE LOOP
+     **********************/
+    function applyLayerToggles() {
+      if (elTogglePlants.checked) { if (!map.hasLayer(plantsLayer)) map.addLayer(plantsLayer); }
+      else { if (map.hasLayer(plantsLayer)) map.removeLayer(plantsLayer); }
+
+      if (elToggleSites.checked) { if (!map.hasLayer(sitesLayer)) map.addLayer(sitesLayer); }
+      else { if (map.hasLayer(sitesLayer)) map.removeLayer(sitesLayer); }
+
+      if (elToggleBuffers.checked) { if (!map.hasLayer(buffersLayer)) map.addLayer(buffersLayer); }
+      else { if (map.hasLayer(buffersLayer)) map.removeLayer(buffersLayer); }
+
+      if (elToggleLogistics.checked) { if (!map.hasLayer(logisticsLayer)) map.addLayer(logisticsLayer); }
+      else { if (map.hasLayer(logisticsLayer)) map.removeLayer(logisticsLayer); }
+    }
+
+    function update() {
+      elCapLabel.textContent = `${elCap.value} MMgy`;
+      elRadiusLabel.textContent = `${elRadius.value} mi`;
+
+      const filteredPlants = ethanolPlants.filter(p => passesFilters(p));
+      updateStats(filteredPlants);
+
+      renderPlants(filteredPlants);
+      renderSites(); // candidate sites not filtered in this demo
+      renderBuffers(filteredPlants);
+
+      applyLayerToggles();
+    }
+
+    /**********************
+     * 7) EVENTS
+     **********************/
+    elSearch.addEventListener("input", update);
+    elStates.addEventListener("change", update);
+    elCap.addEventListener("input", update);
+    elRadius.addEventListener("input", update);
+
+    elTogglePlants.addEventListener("change", applyLayerToggles);
+    elToggleSites.addEventListener("change", applyLayerToggles);
+    elToggleBuffers.addEventListener("change", applyLayerToggles);
+    elToggleLogistics.addEventListener("change", () => { renderLogistics(); applyLayerToggles(); });
+
+    elFit.addEventListener("click", () => {
+      const filteredPlants = ethanolPlants.filter(p => passesFilters(p));
+      const b = getBoundsFromPlants(filteredPlants);
+      if (b) map.fitBounds(b.pad(0.25));
+      else alert("No plants match the current filters.");
+    });
+
+    elReset.addEventListener("click", () => {
+      elSearch.value = "";
+      // clear multi-select
+      for (const opt of elStates.options) opt.selected = false;
+      elCap.value = 0;
+      elRadius.value = 100;
+
+      elTogglePlants.checked = true;
+      elToggleSites.checked = true;
+      elToggleBuffers.checked = true;
+      elToggleLogistics.checked = false;
+
+      update();
+    });
+
+    /**********************
+     * 8) INITIAL RENDER
+     **********************/
+    renderLogistics(); // prepare, but layer starts off by toggle
+    update();
+  </script>
+</body>
+</html>
